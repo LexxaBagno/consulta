@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Representantes por Cidade</title>
+    <!-- Tailwind CSS para estilização moderna -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS para ler o arquivo Excel -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 font-sans">
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        
+        <!-- Cabeçalho -->
+        <div class="mb-8 text-center md:text-left flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-slate-900">Consulta de Representantes</h1>
+                <p class="text-slate-500 text-sm mt-1">Pesquise por estado, cidade, região ou nome do representante</p>
+            </div>
+            
+            <!-- Input para carregar arquivo local caso esteja testando off-line -->
+            <div>
+                <label for="excelFile" class="inline-flex items-center gap-2 cursor-pointer bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition shadow">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    Carregar XLSX
+                </label>
+                <input type="file" id="excelFile" accept=".xlsx, .xls" class="hidden">
+            </div>
+        </div>
+
+        <!-- Filtros de Pesquisa -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            <!-- Filtro UF -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Estado (UF)</label>
+                <select id="filterUF" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="">Todos os Estados</option>
+                </select>
+            </div>
+
+            <!-- Filtro Cidade -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Cidade</label>
+                <input type="text" id="filterCidade" placeholder="Digite o nome da cidade..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            </div>
+
+            <!-- Filtro Representante -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Representante</label>
+                <select id="filterRepresentante" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="">Todos os Representantes</option>
+                </select>
+            </div>
+
+            <!-- Filtro Região -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Região Intermediária</label>
+                <input type="text" id="filterRegiao" placeholder="Digite a região..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            </div>
+
+        </div>
+
+        <!-- Barra de Status e Limpar Filtros -->
+        <div class="flex items-center justify-between mb-4 px-2">
+            <span id="counter" class="text-sm font-medium text-slate-600">Aguardando dados...</span>
+            <button id="btnClear" class="text-xs text-blue-600 hover:text-blue-800 font-semibold underline">Limpar Filtros</button>
+        </div>
+
+        <!-- Tabela de Resultados -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="overflow-x-auto max-h-[600px]">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-slate-50 sticky top-0 border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        <tr>
+                            <th class="p-4">UF</th>
+                            <th class="p-4">Cidade</th>
+                            <th class="p-4">Região Intermediária</th>
+                            <th class="p-4">Representante</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100 text-sm text-slate-700">
+                        <tr>
+                            <td colspan="4" class="text-center py-12 text-slate-400">
+                                Buscando dados do arquivo <span class="font-mono bg-slate-100 px-2 py-1 rounded">ReprXCidade.xlsx</span>...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let rawData = [];
+
+        // Nomes das colunas no seu Excel
+        const COL_NAME = 'Nome Representante';
+        const COL_CITY = 'Cidade';
+        const COL_UF = 'UF';
+        const COL_REGION = 'Região intermediária';
+
+        // Tentar carregar automaticamente o arquivo ReprXCidade.xlsx da pasta local
+        window.addEventListener('DOMContentLoaded', () => {
+            fetch('ReprXCidade.xlsx')
+                .then(response => {
+                    if (!response.ok) throw new Error('Arquivo não encontrado no servidor');
+                    return response.arrayBuffer();
+                })
+                .then(data => processWorkbook(data))
+                .catch(err => {
+                    document.getElementById('tableBody').innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center py-12 text-slate-500">
+                                Selecione o arquivo <b>ReprXCidade.xlsx</b> usando o botão no topo da página.
+                            </td>
+                        </tr>`;
+                });
+        });
+
+        // Evento para upload manual do arquivo
+        document.getElementById('excelFile').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (evt) => processWorkbook(evt.target.result);
+            reader.readAsArrayBuffer(file);
+        });
+
+        // Processa os dados do Excel
+        function processWorkbook(buffer) {
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const firstSheet = workbook.SheetNames[0];
+            rawData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+
+            populateDropdowns();
+            renderTable(rawData);
+            setupEvents();
+        }
+
+        // Preenche os selects de Estado e Representante
+        function populateDropdowns() {
+            const ufs = [...new Set(rawData.map(item => item[COL_UF]).filter(Boolean))].sort();
+            const reps = [...new Set(rawData.map(item => item[COL_NAME]).filter(Boolean))].sort();
+
+            const selectUF = document.getElementById('filterUF');
+            selectUF.innerHTML = '<option value="">Todos os Estados</option>' + 
+                ufs.map(uf => `<option value="${uf}">${uf}</option>`).join('');
+
+            const selectRep = document.getElementById('filterRepresentante');
+            selectRep.innerHTML = '<option value="">Todos os Representantes</option>' + 
+                reps.map(rep => `<option value="${rep}">${rep}</option>`).join('');
+        }
+
+        // Filtra os dados com base nos campos
+        function filterData() {
+            const uf = document.getElementById('filterUF').value.toLowerCase();
+            const cidade = document.getElementById('filterCidade').value.toLowerCase().trim();
+            const rep = document.getElementById('filterRepresentante').value.toLowerCase();
+            const regiao = document.getElementById('filterRegiao').value.toLowerCase().trim();
+
+            const filtered = rawData.filter(row => {
+                const rowUF = String(row[COL_UF] || '').toLowerCase();
+                const rowCidade = String(row[COL_CITY] || '').toLowerCase();
+                const rowRep = String(row[COL_NAME] || '').toLowerCase();
+                const rowRegiao = String(row[COL_REGION] || '').toLowerCase();
+
+                return (!uf || rowUF === uf) &&
+                       (!cidade || rowCidade.includes(cidade)) &&
+                       (!rep || rowRep === rep) &&
+                       (!regiao || rowRegiao.includes(regiao));
+            });
+
+            renderTable(filtered);
+        }
+
+        // Renderiza a tabela
+        function renderTable(data) {
+            const tbody = document.getElementById('tableBody');
+            const counter = document.getElementById('counter');
+
+            counter.textContent = `Exibindo ${data.length.toLocaleString('pt-BR')} registro(s)`;
+
+            if (data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center py-12 text-slate-400">
+                            Nenhum resultado encontrado para os filtros selecionados.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            // Exibir no máximo 500 itens por vez para garantir performance visual
+            const limit = 500;
+            const itemsToDisplay = data.slice(0, limit);
+
+            tbody.innerHTML = itemsToDisplay.map(row => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="p-4 font-semibold text-slate-600">${row[COL_UF] || '-'}</td>
+                    <td class="p-4 font-medium text-slate-900">${row[COL_CITY] || '-'}</td>
+                    <td class="p-4 text-slate-500">${row[COL_REGION] || '-'}</td>
+                    <td class="p-4 text-blue-700 font-semibold">${row[COL_NAME] || '-'}</td>
+                </tr>
+            `).join('');
+
+            if (data.length > limit) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td colspan="4" class="text-center py-3 bg-amber-50 text-amber-700 text-xs font-medium">
+                            Mostrando as primeiras ${limit} linhas de ${data.length.toLocaleString('pt-BR')} no total. Refine a pesquisa para filtrar melhor.
+                        </td>
+                    </tr>`;
+            }
+        }
+
+        // Eventos dos filtros
+        function setupEvents() {
+            document.getElementById('filterUF').addEventListener('change', filterData);
+            document.getElementById('filterCidade').addEventListener('input', filterData);
+            document.getElementById('filterRepresentante').addEventListener('change', filterData);
+            document.getElementById('filterRegiao').addEventListener('input', filterData);
+
+            document.getElementById('btnClear').addEventListener('click', () => {
+                document.getElementById('filterUF').value = '';
+                document.getElementById('filterCidade').value = '';
+                document.getElementById('filterRepresentante').value = '';
+                document.getElementById('filterRegiao').value = '';
+                renderTable(rawData);
+            });
+        }
+    </script>
+</body>
+</html>
